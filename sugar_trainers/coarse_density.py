@@ -8,7 +8,7 @@ from sugar_scene.gs_model import GaussianSplattingWrapper, fetchPly
 from sugar_scene.sugar_model import SuGaR
 from sugar_scene.sugar_optimizer import OptimizationParams, SuGaROptimizer
 from sugar_scene.sugar_densifier import SuGaRDensifier
-from sugar_utils.loss_utils import ssim, l1_loss, l2_loss
+from sugar_utils.loss_utils import ssim, ssim_masked, l1_loss, l1_loss_masked, l2_loss
 
 from rich.console import Console
 import time
@@ -453,11 +453,16 @@ def coarse_training_with_density_regularization(args):
     
     # ====================Loss function====================
     if loss_function == 'l1':
-        loss_fn = l1_loss
+        def loss_fn(pred_rgb, gt_rgb, mask=None):
+            if mask is not None:
+                return l1_loss_masked(pred_rgb, gt_rgb, mask)
+            return l1_loss(pred_rgb, gt_rgb)
     elif loss_function == 'l2':
         loss_fn = l2_loss
     elif loss_function == 'l1+dssim':
-        def loss_fn(pred_rgb, gt_rgb):
+        def loss_fn(pred_rgb, gt_rgb, mask=None):
+            if mask is not None:
+                return (1.0 - dssim_factor) * l1_loss_masked(pred_rgb, gt_rgb, mask) + dssim_factor * (1.0 - ssim_masked(pred_rgb, gt_rgb, mask))
             return (1.0 - dssim_factor) * l1_loss(pred_rgb, gt_rgb) + dssim_factor * (1.0 - ssim(pred_rgb, gt_rgb))
     CONSOLE.print(f'Using loss function: {loss_function}')
     
@@ -536,8 +541,12 @@ def coarse_training_with_density_regularization(args):
                 gt_rgb = gt_image.view(-1, sugar.image_height, sugar.image_width, 3)
                 gt_rgb = gt_rgb.transpose(-1, -2).transpose(-2, -3)
                     
-                # Compute loss 
-                loss = loss_fn(pred_rgb, gt_rgb)
+                # Compute loss
+                _cam = nerfmodel.training_cameras.gs_cameras[camera_indices.item()]
+                _alpha_mask = getattr(_cam, 'alpha_mask', None)
+                if _alpha_mask is not None:
+                    _alpha_mask = _alpha_mask.to(pred_rgb.device)
+                loss = loss_fn(pred_rgb, gt_rgb, mask=_alpha_mask)
                         
                 if enforce_entropy_regularization and iteration > start_entropy_regularization_from and iteration < end_entropy_regularization_at:
                     if iteration == start_entropy_regularization_from + 1:

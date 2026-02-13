@@ -13,7 +13,7 @@ import os
 import numpy  # Added to avoid issue
 import torch
 from random import randint
-from utils.loss_utils import l1_loss, ssim
+from utils.loss_utils import l1_loss, l1_loss_masked, ssim, ssim_masked
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
@@ -89,8 +89,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
-        Ll1 = l1_loss(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        mask = getattr(viewpoint_cam, 'alpha_mask', None)
+        if mask is not None:
+            mask = mask.cuda()
+            Ll1 = l1_loss_masked(image, gt_image, mask)
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_masked(image, gt_image, mask))
+        else:
+            Ll1 = l1_loss(image, gt_image)
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         loss.backward()
 
         iter_end.record()
