@@ -96,6 +96,14 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
 
         image_path = os.path.join(images_folder, os.path.basename(extr.name))
         image_name = os.path.basename(image_path).split(".")[0]
+        # Handle extension mismatch (e.g. COLMAP references .jpg but masked images are .png)
+        if not os.path.exists(image_path):
+            stem = os.path.splitext(image_path)[0]
+            for ext in [".png", ".jpg", ".jpeg", ".PNG", ".JPG"]:
+                candidate = stem + ext
+                if os.path.exists(candidate):
+                    image_path = candidate
+                    break
         image = Image.open(image_path)
 
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
